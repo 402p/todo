@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#667eea">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>待办事项小程序</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  user-select: none;
+}
+#app { max-width: 900px; margin: 0 auto; min-height: 100vh; padding: 20px; }
+/* 顶部栏 */
+.topbar {
+  background: rgba(255,255,255,0.15);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #fff;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.topbar h1 { font-size: 20px; }
+.hint { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+.top-actions { display: flex; gap: 8px; align-items: center; }
+.top-btn, #closeBtn {
+  background: rgba(255,255,255,0.25);
+  border: none; color: #fff;
+  font-size: 17px; width: 40px; height: 40px;
+  border-radius: 50%; cursor: pointer;
+  transition: all 0.2s;
+}
+.top-btn:hover { background: rgba(255,255,255,0.45); }
+#closeBtn:hover { background: rgba(255,80,80,0.85); transform: rotate(90deg); }
+.save-status {
+  color: rgba(255,255,255,0.85); font-size: 12px;
+  margin: 0 0 14px 4px;
+}
+/* 空白提示 */
+.blank-hint {
+  text-align: center; color: rgba(255,255,255,0.75);
+  font-size: 14px; margin: 20px 0;
+  border: 2px dashed rgba(255,255,255,0.4);
+  border-radius: 16px; padding: 16px; cursor: pointer;
+}
+/* 任务网格 */
+#taskGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+.task-card {
+  background: #fff; border-radius: 16px; padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+  cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
+}
+.task-card:hover { transform: translateY(-4px); box-shadow: 0 8px 22px rgba(0,0,0,0.2); }
+.task-card:active { transform: scale(0.97); }
+.task-name { font-size: 17px; font-weight: 600; margin-bottom: 10px; word-break: break-all; }
+.task-progress { font-size: 14px; color: #666; margin-bottom: 8px; }
+.progress-bar { height: 10px; background: #eee; border-radius: 6px; overflow: hidden; margin-bottom: 10px; }
+.progress-fill {
+  height: 100%; background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 6px; transition: width 0.3s;
+}
+.task-deadline { font-size: 12px; color: #999; }
+.task-card.completed { background: linear-gradient(135deg, #34d399, #059669); color: #fff; }
+.task-card.completed .task-progress,
+.task-card.completed .task-deadline { color: rgba(255,255,255,0.85); }
+.task-card.completed .progress-fill { background: rgba(255,255,255,0.9); }
+.task-card.completed .progress-bar { background: rgba(255,255,255,0.3); }
+/* 弹窗 */
+#modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  justify-content: center; align-items: center; z-index: 100;
+}
+#modal.show { display: flex; }
+.modal-box {
+  background: #fff; border-radius: 16px;
+  padding: 28px; width: 90%; max-width: 420px;
+}
+.modal-box h2 { margin-bottom: 20px; color: #333; }
+.form-item { margin-bottom: 16px; }
+.form-item label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; }
+.form-item input {
+  width: 100%; padding: 10px 12px;
+  border: 1px solid #ddd; border-radius: 8px;
+  font-size: 14px; outline: none;
+}
+.form-item input:focus { border-color: #667eea; }
+.modal-actions { display: flex; gap: 10px; margin-top: 8px; }
+.btn { flex: 1; padding: 10px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+.btn-primary { background: #667eea; color: #fff; }
+.btn-primary:hover { background: #5566d6; }
+.btn-cancel { background: #eee; color: #666; }
+.empty {
+  text-align: center; color: rgba(255,255,255,0.8);
+  font-size: 16px; padding: 60px 0;
+}
+@keyframes pop { 0% { transform: scale(0.95); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+.task-card.pop { animation: pop 0.25s; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div>
+      <h1>📋 待办事项</h1>
+      <div class="hint">点空白处创建 · 点卡片计数 · 数据多重备份</div>
+    </div>
+    <div class="top-actions">
+      <button class="top-btn" id="exportBtn" title="导出存档到JSON文件">📤</button>
+      <button class="top-btn" id="importBtn" title="从JSON文件导入存档">📥</button>
+      <button class="top-btn" id="bindBtn" title="绑定本地文件自动写回">💾</button>
+      <button id="closeBtn" title="退出">✕</button>
+    </div>
+  </div>
+  <div id="saveStatus" class="save-status">💡 数据已自动保存到浏览器本地，建议点击 💾 绑定存档文件更保险</div>
+  <div class="blank-hint">👆 单击空白区域，创建新任务</div>
+  <div id="taskGrid"></div>
+  <div class="empty" id="emptyTip" style="display:none;">暂无任务，点击空白处创建一个吧～</div>
+</div>
+
+<div id="modal">
+  <div class="modal-box">
+    <h2>✏️ 新建任务</h2>
+    <div class="form-item">
+      <label>任务名称</label>
+      <input type="text" id="taskName" placeholder="例如：背单词" maxlength="20">
+    </div>
+    <div class="form-item">
+      <label>总次数（达到即完成）</label>
+      <input type="number" id="taskTotal" placeholder="例如：50" min="1" value="10">
+    </div>
+    <div class="form-item">
+      <label>截止日期（点击输入框调起日历）</label>
+      <input type="date" id="taskDeadline">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" id="cancelBtn">取消</button>
+      <button class="btn btn-primary" id="createBtn">创建</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'todo_tasks';
+let tasks = [];
+let fileHandle = null;  // 绑定的存档文件句柄
+
+function load() {
+  try { tasks = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch (e) { tasks = []; }
+}
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  writeToFile(); // 若已绑定存档文件，同步写回
+  updateStatus();
+}
+
+// ===== 渲染 =====
+const grid = document.getElementById('taskGrid');
+const emptyTip = document.getElementById('emptyTip');
+const saveStatus = document.getElementById('saveStatus');
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function render() {
+  grid.innerHTML = '';
+  emptyTip.style.display = tasks.length === 0 ? 'block' : 'none';
+  tasks.forEach(task => {
+    const card = document.createElement('div');
+    card.className = 'task-card' + (task.status === 'completed' ? ' completed' : '');
+    const pct = Math.min(100, Math.round(task.done / task.total * 100));
+    card.innerHTML = `
+      <div class="task-name">${escapeHtml(task.name)}</div>
+      <div class="task-progress">已完成 ${task.done} / ${task.total} 次（${pct}%）</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="task-deadline">⏰ 截止：${task.deadline}${task.status === 'completed' ? ' ✅ 已完成' : ''}</div>
+    `;
+    card.addEventListener('click', e => { e.stopPropagation(); clickTask(task.id, card); });
+    grid.appendChild(card);
+  });
+}
+
+// ===== 点击计数 =====
+function clickTask(id, cardEl) {
+  const task = tasks.find(t => t.id === id);
+  if (!task || task.status !== 'active') return;
+  task.done += 1;
+  if (task.done >= task.total) task.status = 'completed';
+  save();
+  cardEl.classList.add('pop');
+  setTimeout(() => cardEl.classList.remove('pop'), 250);
+  render();
+  if (task.status === 'completed') {
+    setTimeout(() => alert(`🎉 恭喜！「${task.name}」已完成！`), 120);
+  }
+}
+
+// ===== 过期清除 =====
+function cleanExpired() {
+  const now = new Date();
+  const expiredList = tasks.filter(t =>
+    t.status === 'active' && new Date(t.deadline + 'T23:59:59') < now
+  );
+  if (expiredList.length > 0) {
+    tasks = tasks.filter(t => t.status !== 'active' || new Date(t.deadline + 'T23:59:59') >= now);
+    save();
+    render();
+    alert(`⏰ 有 ${expiredList.length} 个任务已过截止日期，已自动清除：${expiredList.map(t => t.name).join('、')}`);
+  }
+}
+setInterval(cleanExpired, 60000);
+cleanExpired();
+
+// ===== 空白处创建 =====
+const modal = document.getElementById('modal');
+const nameInput = document.getElementById('taskName');
+const totalInput = document.getElementById('taskTotal');
+const deadlineInput = document.getElementById('taskDeadline');
+
+document.getElementById('app').addEventListener('click', e => {
+  if (e.target === e.currentTarget ||
+      e.target.classList.contains('blank-hint') ||
+      e.target.id === 'emptyTip') {
+    openModal();
+  }
+});
+
+function openModal() {
+  if (!deadlineInput.value) {
+    const d = new Date();
+    deadlineInput.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  modal.classList.add('show');
+  nameInput.focus();
+}
+function closeModal() { modal.classList.remove('show'); }
+
+document.getElementById('cancelBtn').addEventListener('click', closeModal);
+modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+document.getElementById('createBtn').addEventListener('click', () => {
+  const name = nameInput.value.trim();
+  const total = parseInt(totalInput.value, 10);
+  const deadline = deadlineInput.value;
+  if (!name) { alert('请输入任务名称'); nameInput.focus(); return; }
+  if (!total || total < 1) { alert('总次数至少为 1'); totalInput.focus(); return; }
+  if (!deadline) { alert('请选择截止日期'); return; }
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (new Date(deadline + 'T00:00:00') < today) {
+    alert('截止日期不能早于今天'); return;
+  }
+  tasks.push({ id: Date.now(), name, total, done: 0, deadline, status: 'active' });
+  save();
+  render();
+  closeModal();
+  nameInput.value = '';
+  totalInput.value = '10';
+  deadlineInput.value = '';
+});
+
+// ===== 第二重保险：导出 / 导入 JSON 存档 =====
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const data = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), tasks }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '待办存档_' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  alert('📤 存档已导出！请妥善保存这个 JSON 文件，下次可随时导入恢复。');
+});
+
+document.getElementById('importBtn').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json,.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        const list = Array.isArray(parsed) ? parsed : parsed.tasks;
+        if (!Array.isArray(list)) throw new Error('bad format');
+        tasks = list.map(t => ({
+          id: t.id || Date.now() + Math.random(),
+          name: String(t.name || '未命名任务'),
+          total: Number(t.total) || 1,
+          done: Number(t.done) || 0,
+          deadline: t.deadline || '',
+          status: t.status || 'active'
+        }));
+        save();
+        render();
+        alert(`✅ 导入成功！共恢复 ${tasks.length} 个任务，进度已还原。`);
+      } catch (err) {
+        alert('⚠️ 存档文件格式不正确，无法导入');
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+});
+
+// ===== 第三重保险：绑定本地文件自动写回（Chrome/Edge） =====
+const supportsFSA = 'showSaveFilePicker' in window;
+
+async function bindFile() {
+  if (!supportsFSA) {
+    alert('当前浏览器不支持自动写回功能。\n请使用 Chrome / Edge，并通过本地服务器打开本页（如 python -m http.server），再点击 💾。\n不过你仍可使用 📤 导出 / 📥 导入来备份。');
+    return;
+  }
+  try {
+    fileHandle = await window.showSaveFilePicker({
+      suggestedName: '待办存档.json',
+      types: [{ description: 'JSON 存档', accept: { 'application/json': ['.json'] } }]
+    });
+    await writeToFile();
+    updateStatus();
+    alert('💾 已绑定存档文件！之后每次新增、计数、清除都会自动写回该文件，退出也不怕丢。');
+  } catch (e) {
+    // 用户取消选择则忽略
+  }
+}
+
+async function writeToFile() {
+  if (!fileHandle) return;
+  try {
+    const w = await fileHandle.createWritable();
+    await w.write(JSON.stringify({ version: 1, updatedAt: new Date().toISOString(), tasks }, null, 2));
+    await w.close();
+  } catch (e) {
+    console.warn('写回存档文件失败：', e);
+  }
+}
+
+document.getElementById('bindBtn').addEventListener('click', bindFile);
+
+function updateStatus() {
+  if (fileHandle) {
+    saveStatus.textContent = '💾 已绑定存档文件，所有修改自动写回 · 数据安全';
+  } else {
+    saveStatus.textContent = '💡 数据已自动保存到浏览器本地，建议点击 💾 绑定存档文件更保险';
+  }
+}
+
+// ===== 右上角关闭退出 =====
+document.getElementById('closeBtn').addEventListener('click', () => {
+  const msg = fileHandle
+    ? '数据已自动写回存档文件，确定退出吗？'
+    : '数据已保存在浏览器本地，建议先点 📤 导出存档以防丢失。确定退出吗？';
+  if (confirm(msg)) {
+    try {
+      window.close();
+      setTimeout(() => {
+        alert('浏览器已阻止自动关闭，请直接关闭此标签页或浏览器窗口');
+      }, 200);
+    } catch (e) {
+      alert('浏览器已阻止自动关闭，请直接关闭此标签页或浏览器窗口');
+    }
+  }
+});
+
+// ===== 初始化 =====
+load();
+render();
+updateStatus();
+</script>
+<script>
+if ('navigator' in window && 'serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js');
+  });
+}
+</script>
+</body>
+</html>
